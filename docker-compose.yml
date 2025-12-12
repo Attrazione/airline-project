@@ -1,0 +1,72 @@
+# version: "3.9"
+
+# services:
+#   redis:
+#     image: redis:7
+#     container_name: redis-cache
+#     ports:
+#       - "6379:6379"
+#   db:
+#     image: postgres:15
+#     container_name: flight-db
+#     restart: unless-stopped
+#     environment:
+#       POSTGRES_DB: flightdb
+#       POSTGRES_USER: appuser
+#       POSTGRES_PASSWORD: appsecret
+#     ports:
+#       - "5432:5432"
+#     volumes:
+#       - db_data:/var/lib/postgresql/data
+
+# volumes:
+#   db_data:
+version: "3.9"
+services:
+  redis:
+    image: redis:7
+    container_name: redis-cache
+    networks: [appnet]
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:16
+    container_name: flight-db
+    networks: [appnet]
+    environment:
+      POSTGRES_DB: flightdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: appsecret
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d flightdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: flight-backend
+    networks: [appnet]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://appuser:appsecret@db:5432/flightdb
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  db_data:
+
+networks:
+  appnet:
+    driver: bridge
